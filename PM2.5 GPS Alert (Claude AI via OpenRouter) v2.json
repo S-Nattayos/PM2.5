@@ -1,0 +1,418 @@
+{
+  "name": "PM2.5 GPS Alert (Claude AI via OpenRouter) v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pm25-check",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "2a1538f8-baf6-45a3-bf93-7df7e3951a4a",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1776,
+        208
+      ],
+      "webhookId": "pm25-check"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\nconst name = body.name ?? 'ผู้ใช้งาน';\nconst email = body.email ?? '';\nconst lat = parseFloat(body.lat);\nconst lng = parseFloat(body.lng);\n\nif (!email) {\n  return [{ json: { error: true, message: 'ไม่พบ Email' } }];\n}\nif (!lat || !lng) {\n  return [{ json: { error: true, email, name, message: 'ไม่พบข้อมูล GPS' } }];\n}\n\nreturn [{\n  json: { error: false, name, email, lat, lng }\n}];"
+      },
+      "id": "243f8672-7856-44f4-bfb9-956ef977d24d",
+      "name": "Parse GPS Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1568,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "error-check",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "23744b7c-4183-440a-8c1c-32087cbb9b73",
+      "name": "Data Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.waqi.info/feed/geo:{{ $json.lat }};{{ $json.lng }}/?token=781136d41c3848405622e035c84e222520ecbccc",
+        "options": {}
+      },
+      "id": "1a854bcd-4cb3-4a19-8342-9f64dd470a3b",
+      "name": "Fetch AQI by GPS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1120,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const apiData = $input.first().json;\nconst prev = $('Parse GPS Data').first().json;\n\nif (apiData.status !== 'ok') {\n  return [{ json: { error: true, email: prev.email, name: prev.name, message: 'ไม่สามารถดึงข้อมูลค่าฝุ่นได้' } }];\n}\n\nconst aqi = apiData.data.aqi;\nconst station = apiData.data.city.name;\nconst pm25 = apiData.data.iaqi?.pm25?.v ?? 'N/A';\nconst pm10 = apiData.data.iaqi?.pm10?.v ?? 'N/A';\nconst o3 = apiData.data.iaqi?.o3?.v ?? 'N/A';\nconst time = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });\n\nlet status, emoji, advice, color, bgColor;\n\nif (aqi <= 50) {\n  status = 'ดี'; emoji = '🟢'; color = '#2e7d32'; bgColor = '#e8f5e9';\n  advice = 'คุณภาพอากาศดีมาก เหมาะสำหรับกิจกรรมกลางแจ้งทุกประเภท';\n} else if (aqi <= 100) {\n  status = 'ปานกลาง'; emoji = '🟡'; color = '#f57f17'; bgColor = '#fffde7';\n  advice = 'คุณภาพอากาศพอรับได้ กลุ่มเสี่ยง (เด็ก ผู้สูงอายุ ผู้ป่วย) ควรระวัง';\n} else if (aqi <= 150) {\n  status = 'มีผลต่อกลุ่มเสี่ยง'; emoji = '🟠'; color = '#e65100'; bgColor = '#fff3e0';\n  advice = 'กลุ่มเสี่ยงควรลดกิจกรรมกลางแจ้ง และพิจารณาใส่หน้ากากอนามัย';\n} else if (aqi <= 200) {\n  status = 'อันตราย'; emoji = '🔴'; color = '#b71c1c'; bgColor = '#ffebee';\n  advice = 'ทุกคนควรใส่หน้ากาก N95 หลีกเลี่ยงการออกกำลังกายกลางแจ้ง';\n} else {\n  status = 'อันตรายมาก'; emoji = '🟣'; color = '#4a148c'; bgColor = '#f3e5f5';\n  advice = 'ห้ามออกนอกบ้านหากไม่จำเป็น ปิดหน้าต่าง เปิดเครื่องฟอกอากาศ และสวมหน้ากาก N95 ตลอดเวลา';\n}\n\nreturn [{\n  json: {\n    name: prev.name,\n    email: prev.email,\n    lat: prev.lat,\n    lng: prev.lng,\n    station, aqi, pm25, pm10, o3,\n    status, emoji, color, bgColor, advice, time\n  }\n}];"
+      },
+      "id": "b6109fb8-2d4d-44e1-9c6b-8d98593d2460",
+      "name": "Process AQI Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://pm25-monitor.netlify.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "PM2.5 Monitor"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"model\": \"anthropic/claude-haiku-4-5\",\n  \"max_tokens\": 500,\n  \"messages\": [{\n    \"role\": \"system\",\n    \"content\": \"คุณเป็นผู้เชี่ยวชาญด้านคุณภาพอากาศและสุขภาพ ให้คำแนะนำเป็นภาษาไทย กระชับ เข้าใจง่าย\"\n  },{\n    \"role\": \"user\",\n    \"content\": \"ข้อมูลคุณภาพอากาศ ณ ตำแหน่งปัจจุบัน:\\nAQI={{ $json.aqi }}\\nPM2.5={{ $json.pm25 }} µg/m³\\nPM10={{ $json.pm10 }} µg/m³\\nโอโซน(O3)={{ $json.o3 }}\\nสถานะ={{ $json.status }}\\nสถานีวัด={{ $json.station }}\\n\\nกรุณาวิเคราะห์และให้คำแนะนำสุขภาพแบบ personalized 3-4 ประโยค บอกว่าควรทำอะไร หลีกเลี่ยงอะไร และควรสวมอุปกรณ์ป้องกันอะไรบ้าง ไม่ต้องมีหัวข้อ ไม่ต้องมี bullet point\"\n  }]\n}",
+        "options": {}
+      },
+      "id": "8fb75fb0-2890-48de-8c01-e67209a439b1",
+      "name": "AI Claude Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -672,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiData = $input.first().json;\nconst prev = $('Process AQI Result').first().json;\n\n// Parse OpenRouter/Claude response format\nlet aiAdvice = prev.advice; // fallback\ntry {\n  aiAdvice = aiData.choices[0].message.content.trim();\n} catch(e) {\n  aiAdvice = prev.advice;\n}\n\nreturn [{\n  json: {\n    ...prev,\n    aiAdvice\n  }\n}];"
+      },
+      "id": "d69a0b3e-cbcc-42c7-82ac-83fe3c612231",
+      "name": "Merge AI Advice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.emoji }} ค่าฝุ่น PM2.5 ตำแหน่งปัจจุบัน — {{ $json.status }} (AQI: {{ $json.aqi }})",
+        "message": "=<html><body style='margin:0;padding:0;background:#f0f2f5;font-family:Arial,sans-serif;'><div style='max-width:600px;margin:30px auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.1);'><div style='background:{{ $json.color }};padding:30px;text-align:center;'><h1 style='color:white;margin:0;font-size:22px;'>🌫️ รายงานคุณภาพอากาศ</h1><p style='color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:14px;'>ตำแหน่งปัจจุบันของคุณ</p></div><div style='padding:30px;'><p style='color:#555;font-size:16px;'>สวัสดีคุณ <strong>{{ $json.name }}</strong></p><div style='background:{{ $json.bgColor }};border:2px solid {{ $json.color }};border-radius:12px;padding:24px;text-align:center;margin:20px 0;'><div style='font-size:56px;margin-bottom:8px;'>{{ $json.emoji }}</div><div style='font-size:48px;font-weight:bold;color:{{ $json.color }};line-height:1;'>{{ $json.aqi }}</div><div style='font-size:13px;color:#888;margin-top:4px;'>AQI (Air Quality Index)</div><div style='font-size:22px;font-weight:bold;color:{{ $json.color }};margin-top:8px;'>{{ $json.status }}</div></div><table style='width:100%;border-collapse:collapse;margin:20px 0;font-size:15px;'><tr style='background:#f8f9fa;'><td style='padding:12px 16px;border:1px solid #e0e0e0;font-weight:bold;width:45%;'>🏭 สถานีวัดใกล้สุด</td><td style='padding:12px 16px;border:1px solid #e0e0e0;'>{{ $json.station }}</td></tr><tr><td style='padding:12px 16px;border:1px solid #e0e0e0;font-weight:bold;'>📍 พิกัด GPS</td><td style='padding:12px 16px;border:1px solid #e0e0e0;'>{{ $json.lat }}, {{ $json.lng }}</td></tr><tr style='background:#f8f9fa;'><td style='padding:12px 16px;border:1px solid #e0e0e0;font-weight:bold;'>🌫️ PM2.5</td><td style='padding:12px 16px;border:1px solid #e0e0e0;'>{{ $json.pm25 }} µg/m³</td></tr><tr><td style='padding:12px 16px;border:1px solid #e0e0e0;font-weight:bold;'>💨 PM10</td><td style='padding:12px 16px;border:1px solid #e0e0e0;'>{{ $json.pm10 }} µg/m³</td></tr><tr style='background:#f8f9fa;'><td style='padding:12px 16px;border:1px solid #e0e0e0;font-weight:bold;'>🌀 โอโซน (O3)</td><td style='padding:12px 16px;border:1px solid #e0e0e0;'>{{ $json.o3 }}</td></tr><tr><td style='padding:12px 16px;border:1px solid #e0e0e0;font-weight:bold;'>🕐 เวลา</td><td style='padding:12px 16px;border:1px solid #e0e0e0;'>{{ $json.time }}</td></tr></table><div style='background:#e8f4fd;border-left:5px solid #1a73e8;border-radius:8px;padding:16px;margin:20px 0;'><strong>🤖 คำแนะนำจาก AI:</strong><br/><span style='color:#333;line-height:1.8;'>{{ $json.aiAdvice }}</span></div><a href='https://www.google.com/maps?q={{ $json.lat }},{{ $json.lng }}' style='display:block;text-align:center;background:#1a73e8;color:white;padding:12px;border-radius:8px;text-decoration:none;margin-top:16px;'>📍 ดูตำแหน่งบน Google Maps</a><p style='color:#aaa;font-size:12px;text-align:center;margin-top:24px;'>ข้อมูลจาก AQICN.org · AI วิเคราะห์โดย Claude (via OpenRouter)</p></div></div></body></html>",
+        "options": {}
+      },
+      "id": "eb7e7d51-46b6-451c-b587-324891db901c",
+      "name": "Send Result Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "407760b8-0791-41e9-a7ea-f4fd1a3777ff",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZpYGe5VZTt0L261G",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, message: $json.message ?? 'เกิดข้อผิดพลาด' }) }}",
+        "options": {}
+      },
+      "id": "da456f2f-4302-4e74-8791-3d3582853c53",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1120,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1l0KxhzRmXc3Hg0FMlFzuYFmgRniDBJQ4fnn9XidjlmU"
+        },
+        "sheetName": {
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date/Time": "={{ $json.time }}",
+            "Name": "={{ $json.name }}",
+            "Email": "={{ $json.email }}",
+            "Lat": "={{ $json.lat }}",
+            "Lng": "={{ $json.lng }}",
+            "Station": "={{ $json.station }}",
+            "AQI": "={{ $json.aqi }}",
+            "PM2.5": "={{ $json.pm25 }}",
+            "Status": "={{ $json.status }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "e22868c3-55b8-467f-b2d0-fff5f7b71500",
+      "name": "Save Log to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -224,
+        288
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "l6xyzgh1RGuDxdBf",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "noemail@skip.local",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "555b06d8-db71-4812-81ad-eb1c3fa2999f",
+      "name": "Should Send Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, aiAdvice: $('Merge AI Advice').first().json.aiAdvice }) }}",
+        "options": {}
+      },
+      "id": "4759c9e1-7882-4d4a-99ad-f074beab8e22",
+      "name": "Respond Success (Email)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, aiAdvice: $('Merge AI Advice').first().json.aiAdvice }) }}",
+        "options": {}
+      },
+      "id": "5534b291-16ef-4a77-bbb3-7ab7c14b3d76",
+      "name": "Respond Success (No Email)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        160
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse GPS Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse GPS Data": {
+      "main": [
+        [
+          {
+            "node": "Data Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Valid?": {
+      "main": [
+        [
+          {
+            "node": "Fetch AQI by GPS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AQI by GPS": {
+      "main": [
+        [
+          {
+            "node": "Process AQI Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AQI Result": {
+      "main": [
+        [
+          {
+            "node": "AI Claude Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Claude Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Advice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge AI Advice": {
+      "main": [
+        [
+          {
+            "node": "Should Send Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Result Email": {
+      "main": [
+        [
+          {
+            "node": "Respond Success (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send Email?": {
+      "main": [
+        [
+          {
+            "node": "Send Result Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Success (No Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "bc9f9ef5-cbc7-40fd-ad5d-aad8ac49a319",
+  "meta": {
+    "instanceId": "4c2c5cad4849e4554b40f0cfd3b5e1d75e7523ac28855e6b9db8d456c2de2c43"
+  },
+  "id": "Zje6mML8ioueceA9",
+  "tags": []
+}
